@@ -633,30 +633,499 @@ VALUES
 SELECT LAST_INSERT_ID(); -- returns Auto Increment ID
 ```
 
+## 5. Creating a Copy of a Table (8:47)
 
-5. Creating a Copy of a Table (8:47)
-6. Updating a Single Row (3:55)
-7. Updating Multiple Rows (3:14)
-8. Using Subqueries in Updates (5:36)
-9. Deleting Rows (1:24)
-10. Restoring the Databases (1:06)
+Create copy of table called table_archive. Mysql will ignore attributes such as PK, AI.
+
+```sql
+CREATE TABLE orders_archive AS
+SELECT * FROM orders; -- subquery, part of other SQL statement
+
+INSERT INTO orders_archive
+SELECT *
+FROM orders
+WHERE order_date < '2019-01-01';
+
+-- exercise JOIN becomes new table
+CREATE TABLE invoices_new AS
+SELECT 
+	invoices.invoice_id,
+	invoices.number,
+    clients.name AS client_name,
+    invoices.invoice_total,
+    invoices.payment_total,
+    invoices.invoice_date,
+    invoices.due_date,
+    invoices.payment_date
+FROM invoices
+JOIN clients
+	USING (client_id)
+WHERE invoices.payment_date IS NOT NULL;
+```
+
+## 6. Updating a Single Row (3:55)
+
+```sql
+UPDATE invoices
+SET payment_total = default, payment_date = NULL
+WHERE invoice_id = 1;
+
+UPDATE invoices
+SET 
+	payment_total = payment_total * 0.5,
+	payment_date = due_date
+WHERE invoice_id = 3;
+```
+
+## 7. Updating Multiple Rows (3:14)
+
+Similar to updating single row but more general condition.
+
+```sql
+UPDATE invoices
+SET 
+	payment_total = payment_total * 0.5,
+	payment_date = due_date
+WHERE invoice_id = 3;
+
+-- exercise
+UPDATE customers
+SET 
+	points = points + 50
+WHERE birth_date < '1990-01-01';
+```
+
+## 8. Using Subqueries in Updates (5:36)
+
+A subquery is a SELECT statement that is within another SQL statement.
+
+```sql
+USE sql_invoicing;
+
+UPDATE invoices
+SET 
+	payment_total = payment_total * 0.5,
+	payment_date = due_date
+-- for single record returned use =
+WHERE client_id =
+(SELECT client_id
+FROM clients
+WHERE name = 'MyWorks');
+
+-- for multiple records returned in subquery use IN
+WHERE client_id IN
+(SELECT client_id
+FROM clients
+WHERE state IN ('CA', 'NY'));
+
+-- first run SELECT statement to make sure running UPDATE against correct records
+SELECT *
+FROM invoices
+WHERE payment_date IS NULL;
+
+-- then add UPDATE
+UPDATE invoices
+SET 
+	payment_total = payment_total * 0.5,
+	payment_date = due_date
+WHERE payment_date IS NULL;
+
+-- exercise "gold customer" > 3000 points
+USE sql_store;
+SELECT * FROM orders
+WHERE comments IS NULL;
+
+USE sql_store;
+UPDATE orders
+SET comments = "gold customer"
+WHERE customer_id IN
+(SELECT customer_id FROM customers
+WHERE points > 3000);
+```
+
+## 9. Deleting Rows (1:24)
+
+```sql
+USE sql_invoicing;
+
+DELETE FROM invoice; -- deletes all records from table
+
+DELETE FROM invoice
+WHERE invoice_id = 1; -- delete single record
+
+DELETE FROM invoice 
+WHERE client_id = 
+(SELECT *
+FROM clients
+WHERE name = "Myworks"); -- with subquery
+```
+
+## 10. Restoring the Databases (1:06)
+
+Restore DB to original state, we have added/deleted/updated data.
 
 # Summarizing Data (00:33)
-1. Aggregate Functions (9:19)
-2. The GROUP BY Clause (7:21)
-3. The HAVING Clause (8:50)
-4. The ROLLUP Operator (5:05)
-- A Quick Note
+
+## 1. Aggregate Functions (9:19)
+
+Relevant for organizations with lots of data, take series of values and aggregate them to produce single value. They don't operate on NULL values. Attribute is either column_name or expression. By default these functions use duplicate values, if you don't use DISTINCT keyword.
+
+- MAX(column_name)
+- MIN(...)
+- AVG()
+- SUM()
+- COUNT()
+
+```sql
+SELECT 
+	MAX(invoice_total) AS highest,
+	MIN(invoice_total) AS lowest,
+    AVG(invoice_total) AS average,
+    SUM(invoice_total) AS total,
+    COUNT(invoice_total) AS number_of_invoices,
+    COUNT(payment_date) AS count_of_payments,
+    COUNT(*) AS total_records,
+	COUNT(DISTINCT client_id) AS total_distinct_records
+FROM invoices
+WHERE invoice_date > '2019-07-01'; -- filter on aggregate
+
+-- exercise
+(SELECT 
+	"First half of 2019" AS date_range,
+	SUM(invoice_total) AS total_sales,
+	SUM(payment_total) AS total_payments,
+    SUM(invoice_total-payment_total) AS what_we_expect
+FROM invoices
+WHERE invoice_date
+	BETWEEN '2019-01-01' AND '2019-07-01')
+UNION
+(SELECT 
+	"Second half of 2019" AS date_range,
+	SUM(invoice_total) AS total_sales,
+	SUM(payment_total) AS total_payments,
+    SUM(invoice_total-payment_total) AS what_we_expect
+FROM invoices
+WHERE invoice_date
+	BETWEEN '2019-07-01' AND '2019-12-31')
+UNION
+(SELECT
+	"Total" AS date_range,
+	SUM(invoice_total) AS total_sales,
+	SUM(payment_total) AS total_payments,
+    SUM(invoice_total-payment_total) AS what_we_expect
+FROM invoices
+WHERE invoice_date
+	BETWEEN '2019-01-01' AND '2019-12-31');
+```
+
+## 2. The GROUP BY Clause (7:21)
+
+What if we want to see the total sales per client?
+
+```sql
+SELECT
+	SUM(invoice_total) AS total_sales
+FROM invoices; -- TOTAL
+
+SELECT
+	client_id,
+	SUM(invoice_total) AS total_sales
+FROM invoices
+WHERE invoice_date >= '2019-07-01'
+GROUP BY client_id
+ORDER BY total_sales DESC;
+
+SELECT
+	state, city,
+	SUM(invoice_total) AS total_sales
+FROM invoices i
+JOIN clients USING (client_id)
+GROUP BY state, city; -- grouping by multiple columns
+
+-- exercise
+SELECT
+	date,
+    pm.name AS payment_method,
+    SUM(amount) AS total_payments
+FROM payments p
+JOIN payment_methods pm
+	ON p.payment_method = pm.payment_method_id
+GROUP BY date, payment_method
+ORDER BY date;
+```
+
+Close TAB = Command + W
+
+## 3. The HAVING Clause (8:50)
+
+```sql
+SELECT
+	client_id,
+	SUM(invoice_total) AS total_sales
+FROM invoices
+WHERE total_sales > 500
+GROUP BY client_id; --- ERROR unknown column total sales
+
+SELECT
+	client_id,
+	SUM(invoice_total) AS total_sales
+FROM invoices
+GROUP BY client_id
+HAVING total_sales > 500; -- WORKING, filter data after grouping.
+
+SELECT
+	client_id,
+	SUM(invoice_total) AS total_sales,
+    COUNT(*) AS number_of_invoices
+FROM invoices
+GROUP BY client_id
+HAVING total_sales > 500 AND number_of_invoices > 5; -- compound search condition
+
+-- exercise
+-- Get the customers
+-- 	located in Virginia
+--	who have spent more than $100
+SELECT
+	customers.customer_id,
+	customers.first_name,
+	customers.last_name,
+	customers.state,
+    SUM(order_items.quantity * 	order_items.unit_price) AS total_sales
+FROM customers
+JOIN orders USING (customer_id)
+JOIN order_items USING (order_id)
+WHERE state = 'VA'
+GROUP BY customers.customer_id;
+HAVING total_sales > 100;
+```
+
+Use:
+- WHERE: filter data before grouping our rows, can be any columns.
+- HAVING: filter data after grouping our rows, columns have to be mentioned in SELECT clause
+
+## 4. The ROLLUP Operator (5:05)
+
+Operator that applies to aggregate values, only available in MySQL.
+
+```sql
+SELECT
+	state,
+    city,
+    SUM(invoice_total) AS total_sales
+FROM invoices
+JOIN clients USING (client_id)
+GROUP BY state, city WITH ROLLUP;
+
+-- exercise
+SELECT
+	pm.name AS payment_method,
+    SUM(p.amount) AS total
+FROM payments p
+JOIN payment_methods pm
+	ON p.payment_method = pm.payment_method_id
+GROUP BY pm.name WITH ROLLUP;
+```
 
 # Writing Complex Query (00:45)
-1. Introduction (1:28)
-2. Subqueries (2:29)
-3. The IN Operator (3:39)
-4. Subqueries vs Joins (5:07)
-5. The ALL Keyword (4:52)
-6. The ANY Keyword (2:36)
-7. Correlated Subqueries (5:36)
-8. The EXISTS Operator (5:39)
+
+## 1. Introduction (1:28)
+
+Revisit subquery, SELECT statement within another SQL statement.
+
+## 2. Subqueries (2:29)
+
+```sql
+-- Find products that are more
+-- expensive than Lettuce ( id = 3 )
+
+SELECT *
+FROM products
+WHERE unit_price > (
+	SELECT unit_price
+    FROM products
+    WHERE product_id = 3
+    );
+
+-- In sql_hr;
+-- 		Find employees whose earn more than average
+USE sql_hr;
+
+SELECT *
+FROM employees
+WHERE salary > (
+	SELECT AVG(salary)
+    FROM employees
+    );
+```
+
+## 3. The IN Operator (3:39)
+
+```sql
+-- Find the products that have never been ordered.
+USE sql_store;
+SELECT *
+FROM products
+WHERE product_id NOT IN (
+	SELECT DISTINCT product_id
+    FROM order_items
+    );
+
+-- Find clients without invoices
+USE sql_invoicing;
+SELECT *
+FROM clients
+WHERE client_id NOT IN (
+	SELECT DISTINCT client_id
+    FROM invoices
+    );
+```
+
+## 4. Subqueries vs Joins (5:07)
+
+INNER join will give all clients with invoices.
+OUTER join or LEFT join will give clients without invoices.
+
+Trade-off
+- readability
+- performance
+
+Identical result as above.
+```sql
+-- Find clients without invoices
+USE sql_invoicing;
+SELECT *
+FROM clients
+LEFT JOIN invoices USING (client_id)
+WHERE invoice_id IS NULL;
+
+-- Find customers who have ordered lettuce (id = 3)
+-- 	Select customer_id, first_name, last_name
+
+-- JOIN SOLUTION
+USE sql_store;
+SELECT DISTINCT
+	customer_id,
+    first_name,
+    last_name
+FROM customers
+JOIN orders USING (customer_id)
+JOIN order_items USING (order_id)
+WHERE product_id = 3;
+
+-- SUBQUERY SOLUTION
+--- not very readable !
+USE sql_store;
+SELECT 
+	customer_id,
+    first_name,
+    last_name
+FROM customers
+WHERE customer_id IN (
+	SELECT customer_id
+    FROM orders
+    WHERE order_id IN (
+		SELECT order_id
+        FROM order_items
+        WHERE product_id = 3));
+```
+
+## 5. The ALL Keyword (4:52)
+
+```sql
+-- Select invoices larger than all invoice of client 3
+USE sql_invoicing;
+SELECT *
+FROM invoices
+WHERE invoice_total > (
+	SELECT MAX(invoice_total)
+    FROM invoices
+    WHERE client_id = 3
+	);
+
+-- using ALL keyword
+SELECT *
+FROM invoices
+WHERE invoice_total > ALL(
+	SELECT invoice_total
+    FROM invoices
+    WHERE client_id = 3
+	);
+```
+
+## 6. The ANY Keyword (2:36)
+
+ANY/SOME.
+= ANY equal to IN
+
+```sql
+-- Select clients with at least two invoices
+SELECT *
+FROM clients
+WHERE client_id IN (
+	SELECT client_id
+	FROM invoices
+	GROUP BY client_id
+	HAVING COUNT(*) >= 2
+);
+
+SELECT *
+FROM clients
+WHERE client_id = ANY (
+	SELECT client_id
+	FROM invoices
+	GROUP BY client_id
+	HAVING COUNT(*) >= 2
+);
+```
+
+## 7. Correlated Subqueries (5:36)
+
+```sql
+-- Select employees whose salary is above the average in their office.
+USE sql_hr;
+
+-- AVG salary of whole group, single average across whole table.
+SELECT *
+FROM employees
+WHERE salary > (
+	SELECT AVG(salary)
+    FROM employees
+    )
+;
+
+-- AVG salary per office
+-- for each employee
+-- 		calculate the avg salary for employee office
+-- 		return the employee if salary > avg
+-- reference alias from outer query, this subquery executed multiple times
+USE sql_hr;
+SELECT *
+FROM employees e
+WHERE salary > (
+	SELECT AVG(salary)
+    FROM employees
+    WHERE office_id = e.office_id
+    )
+;
+
+-- exercise
+-- Get invoices that are larger than the 
+-- client's average invoice amount
+USE sql_invoicing;
+SELECT *
+FROM invoices i
+WHERE invoice_total > (
+	SELECT AVG(invoice_total)
+    FROM invoices
+    WHERE client_id = i.client_id
+    )
+;
+```
+
+## 8. The EXISTS Operator (5:39)
+
+
+
 9. Subqueries in the SELECT Clause (4:29)
 10. Subqueries in the FROM Clause (2:58)
 
